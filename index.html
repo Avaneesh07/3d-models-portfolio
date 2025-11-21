@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Model Viewer - Technical Artist Portfolio</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            overflow: hidden;
+        }
+        
+        #container {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        #header {
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 20px;
+            text-align: center;
+            backdrop-filter: blur(10px);
+        }
+        
+        #header h1 {
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+        
+        #viewer {
+            flex: 1;
+            position: relative;
+        }
+        
+        #controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            color: white;
+            backdrop-filter: blur(10px);
+        }
+        
+        #controls select, #controls input {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border: none;
+            border-radius: 5px;
+            background: rgba(255, 255, 255, 0.9);
+        }
+        
+        #info {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            color: white;
+            backdrop-filter: blur(10px);
+            max-width: 300px;
+        }
+        
+        .button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        
+        .button:hover {
+            background: #764ba2;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="header">
+            <h1>🎨 3D Model Portfolio Viewer</h1>
+            <p>Interactive GLB Model Showcase - Technical Artist Portfolio</p>
+        </div>
+        
+        <div id="viewer"></div>
+        
+        <div id="controls">
+            <h3>Model Controls</h3>
+            <select id="modelSelect">
+                <option value="">Upload your GLB models to the 'models' folder</option>
+            </select>
+            <input type="file" id="fileInput" accept=".glb,.gltf" />
+            <button class="button" onclick="resetCamera()">Reset Camera</button>
+            <button class="button" onclick="toggleWireframe()">Wireframe</button>
+        </div>
+        
+        <div id="info">
+            <h3>Instructions</h3>
+            <p>🖱️ Left Click + Drag: Rotate</p>
+            <p>🖱️ Right Click + Drag: Pan</p>
+            <p>🖱️ Scroll: Zoom</p>
+            <p>📁 Upload GLB files or add them to the 'models' folder</p>
+        </div>
+    </div>
+    
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/"
+        }
+    }
+    </script>
+    
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        
+        let scene, camera, renderer, controls, currentModel;
+        let wireframeMode = false;
+        
+        function init() {
+            // Scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x1a1a2e);
+            scene.fog = new THREE.Fog(0x1a1a2e, 10, 50);
+            
+            // Camera
+            camera = new THREE.PerspectiveCamera(
+                75,
+                window.innerWidth / window.innerHeight,
+                0.1,
+                1000
+            );
+            camera.position.set(0, 2, 5);
+            
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.getElementById('viewer').appendChild(renderer.domElement);
+            
+            // Controls
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.minDistance = 1;
+            controls.maxDistance = 20;
+            
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+            directionalLight.position.set(5, 10, 5);
+            directionalLight.castShadow = true;
+            scene.add(directionalLight);
+            
+            const pointLight1 = new THREE.PointLight(0x667eea, 1, 100);
+            pointLight1.position.set(-5, 5, -5);
+            scene.add(pointLight1);
+            
+            const pointLight2 = new THREE.PointLight(0x764ba2, 1, 100);
+            pointLight2.position.set(5, 5, 5);
+            scene.add(pointLight2);
+            
+            // Grid
+            const gridHelper = new THREE.GridHelper(20, 20, 0x667eea, 0x444444);
+            scene.add(gridHelper);
+            
+            // File input
+            document.getElementById('fileInput').addEventListener('change', handleFileSelect);
+            
+            // Load default message
+            createTextPlane();
+            
+            // Animate
+            animate();
+        }
+        
+        function createTextPlane() {
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.width = 512;
+            canvas.height = 256;
+            
+            context.fillStyle = 'rgba(102, 126, 234, 0.8)';
+            context.fillRect(0, 0, canvas.width, canvas.height);
+            
+            context.fillStyle = 'white';
+            context.font = 'Bold 40px Arial';
+            context.textAlign = 'center';
+            context.fillText('Upload a GLB Model', canvas.width / 2, canvas.height / 2 - 20);
+            context.font = '30px Arial';
+            context.fillText('to get started!', canvas.width / 2, canvas.height / 2 + 30);
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
+            const geometry = new THREE.PlaneGeometry(4, 2);
+            const plane = new THREE.Mesh(geometry, material);
+            plane.position.y = 2;
+            scene.add(plane);
+            currentModel = plane;
+        }
+        
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    loadModel(e.target.result);
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+        
+        function loadModel(url) {
+            const loader = new GLTFLoader();
+            
+            // Remove current model
+            if (currentModel) {
+                scene.remove(currentModel);
+            }
+            
+            loader.load(
+                url,
+                function(gltf) {
+                    currentModel = gltf.scene;
+                    
+                    // Center the model
+                    const box = new THREE.Box3().setFromObject(currentModel);
+                    const center = box.getCenter(new THREE.Vector3());
+                    const size = box.getSize(new THREE.Vector3());
+                    
+                    currentModel.position.sub(center);
+                    
+                    // Scale to fit
+                    const maxDim = Math.max(size.x, size.y, size.z);
+                    const scale = 3 / maxDim;
+                    currentModel.scale.multiplyScalar(scale);
+                    
+                    scene.add(currentModel);
+                    
+                    // Enable shadows
+                    currentModel.traverse((child) => {
+                        if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                        }
+                    });
+                },
+                function(xhr) {
+                    console.log((xhr.loaded / xhr.total * 100) + '% loaded');
+                },
+                function(error) {
+                    console.error('Error loading model:', error);
+                    alert('Error loading 3D model. Please check the file format.');
+                }
+            );
+        }
+        
+        window.resetCamera = function() {
+            camera.position.set(0, 2, 5);
+            controls.reset();
+        }
+        
+        window.toggleWireframe = function() {
+            wireframeMode = !wireframeMode;
+            if (currentModel) {
+                currentModel.traverse((child) => {
+                    if (child.isMesh) {
+                        child.material.wireframe = wireframeMode;
+                    }
+                });
+            }
+        }
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+        
+        init();
+    </script>
+</body>
+</html>
